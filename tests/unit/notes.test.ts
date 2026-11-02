@@ -1,22 +1,23 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
-import { useEditorStore } from "../../app/stores/editor";
-import { useNotesStore } from "../../app/stores/notes";
-import { copyNote, type Note } from "../../app/domain/notes/model";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createHistory,
   record,
-  undo,
   redo,
+  undo,
 } from "../../app/domain/notes/history";
+import { copyNote, type Note } from "../../app/domain/notes/model";
 import {
   COLLECTION_KEY,
   draftKey,
   readDraft,
+  type StoragePort,
   writeDraft,
   writeNotes,
-  type StoragePort,
 } from "../../app/storage/notes";
+import { useEditorStore } from "../../app/stores/editor";
+import { useNotesStore } from "../../app/stores/notes";
+
 const note: Note = {
   id: "one",
   title: "Title",
@@ -25,6 +26,7 @@ const note: Note = {
     { id: "b", text: "B", done: false },
   ],
 };
+
 function memory(): StoragePort {
   const data = new Map<string, string>();
   return {
@@ -37,6 +39,7 @@ function memory(): StoragePort {
     }),
   };
 }
+
 beforeEach(() => {
   setActivePinia(createPinia());
   vi.useFakeTimers();
@@ -82,6 +85,21 @@ describe("editor session", () => {
     editor.open("one", note);
     return editor;
   }
+  it("creates notes and tasks when crypto.randomUUID is unavailable", () => {
+    const getRandomValues = crypto.getRandomValues.bind(crypto);
+    vi.stubGlobal("crypto", { getRandomValues });
+    const editor = useEditorStore();
+    editor.open("new", undefined);
+    const noteId = editor.draft!.id;
+    const taskId = editor.add();
+    expect(noteId).toMatch(/^[a-f0-9]{32}$/);
+    expect(taskId).toMatch(/^[a-f0-9]{32}$/);
+    expect(taskId).not.toBe(noteId);
+    editor.undo();
+    editor.redo();
+    expect(editor.draft!.todos[0]!.id).toBe(taskId);
+  });
+
   it("groups typing and flushes immediately before a toggle", () => {
     const editor = open();
     editor.text({ kind: "title" }, "T");
@@ -122,8 +140,12 @@ describe("editor session", () => {
     vi.advanceTimersByTime(600);
     expect(useNotesStore().notes[0]!.todos[0]!.text).toBe("A");
     expect(note.todos[0]!.text).toBe("A");
-    expect(localStorage.setItem).not.toHaveBeenCalled();
-    expect(readDraft(sessionStorage, "one")!.todos[0]!.text).toBe("Changed");
+    expect(
+      vi
+        .mocked(localStorage.setItem)
+        .mock.calls.every(([key]) => key !== COLLECTION_KEY),
+    ).toBe(true);
+    expect(readDraft(localStorage, "one")!.todos[0]!.text).toBe("Changed");
   });
   it("saves trimmed content, clears history, recovery and pending writes", async () => {
     const editor = open();
@@ -133,7 +155,7 @@ describe("editor session", () => {
     vi.advanceTimersByTime(1000);
     expect(useNotesStore().notes[0]!.title).toBe("Saved");
     expect(editor.history.past).toHaveLength(0);
-    expect(sessionStorage.getItem(draftKey("one"))).toBeNull();
+    expect(localStorage.getItem(draftKey("one"))).toBeNull();
   });
   it("cancel clears the session without changing saved notes", () => {
     const editor = open();
@@ -143,7 +165,7 @@ describe("editor session", () => {
     vi.advanceTimersByTime(1000);
     expect(editor.draft).toBeNull();
     expect(editor.canUndo).toBe(false);
-    expect(sessionStorage.getItem(draftKey("one"))).toBeNull();
+    expect(localStorage.getItem(draftKey("one"))).toBeNull();
     expect(useNotesStore().notes[0]!.title).toBe("Title");
   });
   it("offers reload recovery and restores with fresh history", () => {
@@ -158,13 +180,46 @@ describe("editor session", () => {
     expect(editor.canUndo).toBe(false);
   });
   it("separates recovery drafts by route and supports discard", () => {
-    writeDraft(sessionStorage, "new", { ...note, title: "New draft" });
+    writeDraft(localStorage, "new", { ...note, title: "New draft" });
     const editor = open();
     expect(editor.recovery).toBeNull();
     editor.open("new", undefined);
     expect(editor.recovery!.title).toBe("New draft");
     editor.discardRecovery();
-    expect(readDraft(sessionStorage, "new")).toBeNull();
+    expect(readDraft(localStorage, "new")).toBeNull();
+  });
+  it("restores a local draft after a new browser session", () => {
+    const editor = open();
+    editor.text({ kind: "title" }, "Persistent draft");
+    editor.flushRecovery();
+    editor.dispose();
+    setActivePinia(createPinia());
+    vi.stubGlobal("sessionStorage", memory());
+    const reopened = open();
+    expect(reopened.recovery!.title).toBe("Persistent draft");
+    expect(reopened.draft!.title).toBe("Title");
+  });
+  it("migrates a legacy session draft into local storage", () => {
+    writeDraft(sessionStorage, "one", { ...note, title: "Legacy draft" });
+    const editor = open();
+    expect(editor.recovery!.title).toBe("Legacy draft");
+    expect(readDraft(localStorage, "one")!.title).toBe("Legacy draft");
+    expect(sessionStorage.getItem(draftKey("one"))).toBeNull();
+  });
+  it("preserves a local draft when a legacy draft also exists", () => {
+    writeDraft(sessionStorage, "one", { ...note, title: "Old draft" });
+    writeDraft(localStorage, "one", { ...note, title: "Local draft" });
+    expect(open().recovery!.title).toBe("Local draft");
+    expect(sessionStorage.getItem(draftKey("one"))).toBeNull();
+  });
+  it("keeps legacy recovery when migration cannot write to local storage", () => {
+    writeDraft(sessionStorage, "one", { ...note, title: "Legacy draft" });
+    vi.mocked(localStorage.setItem).mockImplementation(() => {
+      throw new Error("Quota");
+    });
+    const editor = open();
+    expect(editor.error).not.toBe("");
+    expect(readDraft(sessionStorage, "one")!.title).toBe("Legacy draft");
   });
   it("keeps the draft when storage writes fail", async () => {
     const editor = open();
@@ -180,7 +235,7 @@ describe("editor session", () => {
   it("reports recovery write failures", () => {
     const editor = open();
     editor.text({ kind: "title" }, "Keep");
-    vi.mocked(sessionStorage.setItem).mockImplementation(() => {
+    vi.mocked(localStorage.setItem).mockImplementation(() => {
       throw new Error("Quota");
     });
     editor.flushRecovery();
@@ -203,16 +258,41 @@ describe("editor session", () => {
     editor.open("missing", undefined);
     expect(editor.draft).toBeNull();
   });
-  it("validates blank fields and allows zero tasks", async () => {
+  it("validates the title and drops blank tasks when saving", async () => {
     const editor = open();
     editor.text({ kind: "title" }, " ");
     editor.text({ kind: "todo", id: "a" }, "");
     expect(await editor.save()).toBe(false);
-    expect(Object.keys(editor.errors)).toEqual(["title", "a"]);
+    expect(Object.keys(editor.errors)).toEqual(["title"]);
     editor.text({ kind: "title" }, "Title");
-    editor.remove("a");
-    editor.remove("b");
+    editor.text({ kind: "todo", id: "b" }, " \n\t ");
     expect(await editor.save()).toBe(true);
+    expect(useNotesStore().notes[0]!.todos).toEqual([]);
+  });
+  it("keeps task IDs, order and completion while removing empty tasks", async () => {
+    const editor = open();
+    editor.text({ kind: "todo", id: "a" }, " A trimmed ");
+    const emptyId = editor.add();
+    editor.text({ kind: "todo", id: emptyId }, "   ");
+    editor.toggle("b");
+    const lastId = editor.add();
+    editor.text({ kind: "todo", id: lastId }, " Last ");
+    expect(await editor.save()).toBe(true);
+    expect(useNotesStore().notes[0]!.todos).toEqual([
+      { id: "a", text: "A trimmed", done: false },
+      { id: "b", text: "B", done: true },
+      { id: lastId, text: "Last", done: false },
+    ]);
+  });
+  it("keeps blank tasks in the draft when saving fails", async () => {
+    const editor = open();
+    editor.text({ kind: "todo", id: "a" }, " ");
+    vi.mocked(localStorage.setItem).mockImplementation(() => {
+      throw new Error("Quota");
+    });
+    expect(await editor.save()).toBe(false);
+    expect(editor.draft!.todos[0]).toEqual({ id: "a", text: " ", done: false });
+    expect(useNotesStore().notes[0]!.todos).toEqual(note.todos);
   });
   it("does not replace malformed saved data on save or delete", async () => {
     localStorage.setItem(COLLECTION_KEY, "{invalid");
@@ -225,11 +305,58 @@ describe("editor session", () => {
   it("does not commit saved notes if recovery cleanup fails", async () => {
     const editor = open();
     editor.text({ kind: "title" }, "Unsaved");
-    vi.mocked(sessionStorage.removeItem).mockImplementation(() => {
+    vi.mocked(localStorage.removeItem).mockImplementation(() => {
       throw new Error("Denied");
     });
     expect(await editor.save()).toBe(false);
     expect(editor.draft!.title).toBe("Unsaved");
     expect(useNotesStore().notes[0]!.title).toBe("Title");
+  });
+});
+
+describe("preview task completion", () => {
+  it("persists completion while keeping an active editor draft isolated", async () => {
+    const notes = useNotesStore();
+    const editor = useEditorStore();
+    editor.open("one", note);
+    expect(await notes.toggleTodo("one", "a")).toBe(true);
+    expect(notes.notes[0]!.todos[0]!.done).toBe(true);
+    expect(editor.draft!.todos[0]!.done).toBe(false);
+    notes.refresh();
+    expect(notes.notes[0]!.todos[0]!.done).toBe(true);
+    expect(await notes.toggleTodo("one", "a")).toBe(true);
+    expect(notes.notes[0]!.todos[0]!.done).toBe(false);
+  });
+
+  it("updates the latest saved collection without overwriting other changes", async () => {
+    const latest = copyNote(note);
+    latest.title = "Changed elsewhere";
+    latest.todos[1]!.text = "Changed task";
+    writeNotes(localStorage, [latest]);
+    await useNotesStore().toggleTodo("one", "a");
+    expect(useNotesStore().notes[0]).toEqual({
+      ...latest,
+      todos: [{ ...latest.todos[0]!, done: true }, latest.todos[1]],
+    });
+  });
+
+  it("keeps the visible state unchanged when persistence fails", async () => {
+    vi.mocked(localStorage.setItem).mockImplementation(() => {
+      throw new Error("Quota");
+    });
+    await expect(useNotesStore().toggleTodo("one", "a")).rejects.toThrow(
+      "Quota",
+    );
+    expect(useNotesStore().notes[0]!.todos[0]!.done).toBe(false);
+  });
+
+  it("does not recreate deleted notes or tasks", async () => {
+    const notes = useNotesStore();
+    expect(await notes.toggleTodo("one", "missing-task")).toBe(false);
+    writeNotes(localStorage, []);
+    vi.mocked(localStorage.setItem).mockClear();
+    expect(await notes.toggleTodo("one", "a")).toBe(false);
+    expect(notes.notes).toEqual([]);
+    expect(localStorage.setItem).not.toHaveBeenCalled();
   });
 });

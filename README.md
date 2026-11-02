@@ -1,77 +1,84 @@
-# Заметки
+# Notes
 
-Двухстраничный личный блокнот на Nuxt 4, Vue Composition API, TypeScript strict, Pinia и SCSS. Интерфейс на русском. Данные остаются в браузере пользователя.
+A two-page personal notebook built with Nuxt 4, the Vue Composition API, strict TypeScript, Pinia, and SCSS. The interface is in Russian. Data stays in the user's browser.
 
-## Запуск
+![Notes application preview](preview.png)
+
+## Getting started
 
 ```sh
 docker-compose up --build
 ```
 
-Откройте http://localhost:3000. Docker устанавливает зависимости и собирает SPA самостоятельно. Nginx возвращает `index.html` для прямых адресов `/notes/:id`. Для завершения используйте Ctrl+C.
+Open [the application](http://localhost:3000). Docker installs dependencies and builds the SPA. Nginx serves `index.html` for direct requests to `/notes/:id`. Press Ctrl+C to stop the application.
 
-При установленном Node.js 24 доступен запуск для разработки.
+For local development, install Node.js 24.15 or later in the 24.x line and run the following commands.
 
 ```sh
 npm ci
 npm run dev
 ```
 
-## Проверки
+## Checks
 
 ```sh
+npm run format:check
+npm run lint
 npm test
 npm run typecheck
 npm run generate
 ```
 
-## Архитектура
+Run `npm run format` to apply Prettier. The lint command runs ESLint for scripts and Vue templates, then Stylelint for SCSS files and Vue style blocks.
 
-- `app/domain/notes` содержит модель, валидацию и обратимые операции. История хранит до 50 операций, включая идентификатор поля, значения текста и позиции задач.
-- `app/stores/notes.ts` владеет сохранённой коллекцией. `app/stores/editor.ts` владеет независимой сессией редактирования. Компоненты сообщают о действиях через типизированные события.
-- `app/storage` вручную читает и проверяет JSON с `schemaVersion: 1`. Сохранённая коллекция в localStorage меняется при Save и Delete. Черновик каждого маршрута хранится в sessionStorage с задержкой 500 мс и сбрасывается при pagehide.
-- Web Locks сериализует изменения коллекции между вкладками. Наличие существующей заметки перепроверяется под блокировкой. Для записи нужны современный браузер и localhost или HTTPS.
+## Architecture
 
-Непрерывный ввод объединяется до потери фокуса или паузы 500 мс. Следующее действие сначала фиксирует ввод. Ctrl/Cmd+Z и Ctrl/Cmd+Shift+Z вне полей управляют историей редактора. В текстовых полях сохраняется нативная история браузера.
+- `app/domain/notes` contains the data model, validation, and reversible operations. History holds up to 50 operations, including field identities, text values, and task positions.
+- `app/stores/notes.ts` owns the saved collection. `app/stores/editor.ts` owns an independent editing session. Components communicate user actions through typed events.
+- `app/storage` manually reads and validates JSON with `schemaVersion: 1`. The saved collection in localStorage changes on Save, Delete, and task completion changes in home-page previews. Each editor route has a separate recovery draft in localStorage, so recovery remains available after closing and reopening the browser. Existing sessionStorage drafts are migrated when their editor route is opened. Draft writes are debounced by 500 ms and flushed on pagehide.
+- Web Locks serializes collection updates across tabs. An existing note's presence is checked again while holding the lock. When Web Locks is unavailable, including HTTP access over a local network, an IndexedDB readwrite transaction serializes the synchronous collection updates. Note content remains in localStorage.
 
-При восстановлении черновика история начинается заново. Пустые поля разрешены при вводе. Сохранение удаляет крайние пробелы и показывает ошибки пустых полей. Ноль задач — допустимый вариант заметки.
+Continuous typing is grouped until the field loses focus or input pauses for 500 ms. The next editor action first commits any pending text operation. Ctrl/Cmd+Z and Ctrl/Cmd+Shift+Z control editor history outside text fields. Text fields retain the browser's native undo history.
 
-## Ручная приёмка
+Restoring a draft starts a fresh history. Empty fields are allowed while typing. Saving trims surrounding whitespace, removes tasks with blank text, and displays an error if the title is blank. A note may have zero tasks.
 
-1. Создайте заметку, добавьте задачи и сохраните. Перезагрузите прямой адрес редактора.
-2. Измените текст, сразу переключите чекбокс. Последовательные Undo должны отменить отметку, затем группу ввода. После Undo новая правка очищает Redo.
-3. Измените заметку и перезагрузите страницу. Выберите восстановление, затем проверьте отбрасывание отдельного черновика.
-4. Откройте заметку в двух вкладках. Удалите её в одной. Во второй должно появиться объяснение, Save должен стать недоступен. Повторное сохранение не возвращает запись.
-5. Пройдите интерфейс клавиатурой. Проверьте Tab/Shift+Tab внутри диалога, Escape, возврат фокуса, нативный Undo в тексте, фокус первой ошибки при Save.
-6. На ширине 320 px и при увеличении текста до 200% проверьте длинные названия и строки без пробелов. Все действия должны оставаться доступны.
-7. На iPhone с Dynamic Island в Safari откройте длинную заметку. Сверните и разверните панели, добавьте последнюю задачу, введите текст, поверните экран, откройте и закройте диалог, исправьте пустое поле в начале списка и сохраните. Каретка, ошибки и обе кнопки диалога должны быть достижимы. Проверьте VoiceOver и порядок чтения.
+## Manual acceptance checks
 
-## Результаты проверки
+1. Create a note, add tasks, and save it. Reload the editor using its direct URL.
+2. Edit text and immediately toggle a checkbox. Successive Undo actions should revert the toggle, then the typing group. A new edit after Undo should clear Redo.
+3. Edit a note and reload the page. Restore the draft, then use another draft to check the Discard action.
+4. Open the same note in two tabs and delete it in one. The other tab should explain what happened and disable Save. Saving from the stale editor must never recreate the deleted note.
+5. Navigate using only the keyboard. Check Tab/Shift+Tab inside dialogs, Escape dismissal, focus restoration, native text undo, and focus on the first invalid field when saving.
+6. At a width of 320 CSS px and with text enlarged to 200%, check long titles and strings without spaces. All actions should remain accessible.
+7. In Safari on an iPhone with Dynamic Island, open a long note. Collapse and expand the browser controls, add the last task, enter text, rotate the screen, open and close a dialog, correct a blank field at the start of the list, and save. The caret, errors, and both dialog buttons should remain reachable. Check VoiceOver and reading order.
 
-Проверено 3 ноября 2026 года.
+## Verification results
 
-- Vitest — 16 тестов прошли. TypeScript strict — без ошибок.
-- Docker — установка через `npm ci`, статическая сборка и запуск Nginx успешны. Прямые URL редактора работают.
-- Chromium 156 и Playwright WebKit 27.2 — прошли создание, Save, reload, восстановление, отказ от выхода, Escape, валидация, ширина 320 px, удаление из другой вкладки и неизвестный ID. Ошибок JavaScript в этих сценариях нет.
-- Chromium и WebKit — дополнительно проверены нативный Undo, глобальные Undo/Redo, цикл фокуса диалога, сохранность recovery после Escape, увеличение текста до 200% и альбомная ориентация.
-- Firefox — автоматическая проверка не завершена. Загруженная сборка не смогла открыть временный профиль в этом окружении.
-- Настоящий Safari на iPhone, динамические панели Safari, экранная клавиатура и VoiceOver требуют ручной приёмки на устройстве. Проверка WebKit не покрывает системный интерфейс iOS.
+Verified on November 3, 2026.
 
-Браузерный smoke-тест сохранён в репозитории.
+- Vitest passed all 27 tests. Strict TypeScript checking completed without errors.
+- Docker dependency installation using `npm ci`, static generation, and Nginx startup succeeded. Direct editor URLs work.
+- Chromium 156 and Playwright WebKit 27.2 passed creation, saving, reload, recovery, staying in the editor after a leave confirmation, Escape dismissal, validation, the 320 px layout, deletion from another tab, and unknown note IDs. These scenarios produced no JavaScript errors.
+- Chromium and WebKit also passed checks for native undo, global undo/redo, dialog focus trapping, recovery preservation after Escape, text enlarged to 200%, and landscape orientation.
+- Firefox verification remains incomplete. The downloaded build could not open its temporary profile in this environment.
+- Safari on a physical iPhone, dynamic browser controls, the on-screen keyboard, and VoiceOver still require manual acceptance checks on a device. Playwright WebKit verification does not cover the iOS system interface.
+
+The browser smoke test is included in the repository.
 
 ```sh
 npx playwright install
 npm run test:browser
-# Выбор доступных движков
+# Select the available browser engines
 BROWSERS=chromium,webkit npm run test:browser
 node tests/browser/keyboard.cjs
+node tests/browser/http-compatibility.cjs
 ```
 
-Перед запуском теста приложение должно работать на http://localhost:3000. Другой адрес можно задать через `BASE_URL`. Тест использует отдельный браузерный контекст и не меняет заметки в вашем обычном профиле.
+Start the application at [localhost](http://localhost:3000) before running these tests. Use `BASE_URL` to specify another address. Tests use separate browser contexts and leave notes in your regular browser profile untouched.
 
-## Публикация
+## Publishing
 
-Локальная история Git подготовлена для самостоятельной публикации. Создайте пустой публичный репозиторий GitHub или GitLab и добавьте его адрес.
+The local Git history is ready for publication. Create an empty public GitHub or GitLab repository and add its remote URL.
 
 ```sh
 git remote add origin <URL>

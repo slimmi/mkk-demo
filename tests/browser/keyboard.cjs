@@ -50,7 +50,7 @@ const assert = require("node:assert/strict");
     assert.equal(await p.getByRole("dialog").count(), 0);
     assert(
       await p.evaluate(
-        (id) => !!sessionStorage.getItem("notebook:draft:v1:" + id),
+        (id) => !!localStorage.getItem("notebook:draft:v1:" + id),
         path,
       ),
     );

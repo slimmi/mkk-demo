@@ -3,15 +3,17 @@ import { ref } from "vue";
 import type { Note } from "../domain/notes/model";
 import { copyNote } from "../domain/notes/model";
 import {
-  savedStorage,
   readNotes,
-  writeNotes,
-  withCollectionLock,
+  savedStorage,
   type StoragePort,
+  withCollectionLock,
+  writeNotes,
 } from "../storage/notes";
+
 export const useNotesStore = defineStore("notes", () => {
   const notes = ref<Note[]>([]);
   const error = ref("");
+
   function refresh(storage: StoragePort = savedStorage) {
     try {
       notes.value = readNotes(storage);
@@ -23,6 +25,7 @@ export const useNotesStore = defineStore("notes", () => {
       return false;
     }
   }
+
   async function save(
     note: Note,
     existing: boolean,
@@ -40,6 +43,7 @@ export const useNotesStore = defineStore("notes", () => {
       return true;
     });
   }
+
   async function remove(
     id: string,
     storage: StoragePort = savedStorage,
@@ -51,5 +55,28 @@ export const useNotesStore = defineStore("notes", () => {
       notes.value = current;
     });
   }
-  return { notes, error, refresh, save, remove };
+
+  async function toggleTodo(
+    noteId: string,
+    todoId: string,
+    storage: StoragePort = savedStorage,
+    lock = withCollectionLock,
+  ) {
+    return lock(() => {
+      const current = readNotes(storage);
+      const todo = current
+        .find((note) => note.id === noteId)
+        ?.todos.find((todo) => todo.id === todoId);
+      if (!todo) {
+        notes.value = current;
+        return false;
+      }
+      todo.done = !todo.done;
+      writeNotes(storage, current);
+      notes.value = current;
+      return true;
+    });
+  }
+
+  return { notes, error, refresh, save, remove, toggleTodo };
 });

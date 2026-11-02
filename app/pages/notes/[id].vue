@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { useNotesStore } from "../../stores/notes";
-import { useEditorLifecycle } from "../../composables/useEditorLifecycle";
-import { useEditorStore } from "../../stores/editor";
+import { useEditorLifecycle } from "~/composables/useEditorLifecycle.ts";
+import { useEditorStore } from "~/stores/editor.ts";
+import { useNotesStore } from "~/stores/notes.ts";
+
 const route = useRoute();
 const notes = useNotesStore();
 const editor = useEditorStore();
@@ -10,6 +11,7 @@ editor.open(
   id,
   notes.notes.find((note) => note.id === id),
 );
+const missingNote = !editor.draft;
 const dialog = ref<"leave" | "delete" | null>(null);
 const recoveryPrompt = ref(true);
 const leaving = ref(false);
@@ -37,11 +39,22 @@ onBeforeRouteLeave(() => {
     resolveLeave = resolve;
   });
 });
+
 function dismiss() {
   dialog.value = null;
   resolveLeave?.(false);
   resolveLeave = undefined;
 }
+
+function requestLeave() {
+  editor.flushText();
+  if (editor.dirty) {
+    dialog.value = "leave";
+    return;
+  }
+  return leave();
+}
+
 async function leave() {
   if (!editor.cancel()) {
     dismiss();
@@ -54,6 +67,7 @@ async function leave() {
     resolveLeave = undefined;
   } else await navigateTo("/");
 }
+
 async function save() {
   if (busy.value) return;
   busy.value = true;
@@ -71,6 +85,7 @@ async function save() {
     invalid?.scrollIntoView({ block: "center" });
   }
 }
+
 async function remove() {
   try {
     await notes.remove(id);
@@ -80,6 +95,7 @@ async function remove() {
     editor.error = "Не удалось удалить заметку. Попробуйте ещё раз.";
   }
 }
+
 async function add() {
   const itemId = editor.add();
   await nextTick();
@@ -87,6 +103,15 @@ async function add() {
   field?.focus();
   field?.scrollIntoView({ block: "nearest" });
 }
+
+function focusTodo(index: number) {
+  const todo = editor.draft?.todos[index];
+  if (!todo) return;
+  const field = document.getElementById(`todo-${todo.id}`);
+  field?.focus();
+  field?.scrollIntoView({ block: "nearest" });
+}
+
 async function removeTodo(itemId: string) {
   const index = editor.draft!.todos.findIndex((item) => item.id === itemId);
   editor.remove(itemId);
@@ -122,9 +147,10 @@ async function removeTodo(itemId: string) {
             type="button"
             @click="editor.restore"
           >
-            Восстановить</button
-          ><button class="button" type="button" @click="editor.discardRecovery">
-            Отбросить черновик
+            Восстановить
+          </button>
+          <button class="button" type="button" @click="editor.discardRecovery">
+            Отменить
           </button>
         </div>
       </div>
@@ -139,13 +165,14 @@ async function removeTodo(itemId: string) {
         <fieldset :disabled="busy || !!editor.recovery" class="editor-fieldset">
           <div class="editor-paper">
             <label class="field-label" for="note-title">Название заметки</label>
-            <textarea
+            <input
               id="note-title"
               class="title-input"
               name="title"
-              rows="2"
+              type="text"
               autocomplete="off"
               placeholder="О чём эта заметка?"
+              autofocus
               :value="editor.draft.title"
               :aria-invalid="!!editor.errors.title"
               :aria-describedby="
@@ -154,7 +181,7 @@ async function removeTodo(itemId: string) {
               @input="
                 editor.text(
                   { kind: 'title' },
-                  ($event.target as HTMLTextAreaElement).value,
+                  ($event.target as HTMLInputElement).value,
                 )
               "
               @blur="editor.flushText"
@@ -183,6 +210,8 @@ async function removeTodo(itemId: string) {
                 @toggle="editor.toggle(todo.id)"
                 @remove="removeTodo(todo.id)"
                 @blur="editor.flushText"
+                @add="add"
+                @navigate="focusTodo(index + $event)"
               />
             </ul>
             <button
@@ -205,8 +234,9 @@ async function removeTodo(itemId: string) {
               :disabled="!editor.canUndo"
               @click="editor.undo"
             >
-              ↶ Отменить шаг</button
-            ><button
+              ↶ Отменить шаг
+            </button>
+            <button
               class="button"
               type="button"
               :disabled="!editor.canRedo"
@@ -221,17 +251,17 @@ async function removeTodo(itemId: string) {
               type="submit"
               :disabled="editor.deleted || busy"
             >
-              {{ busy ? "Сохранение…" : "Сохранить" }}</button
-            ><button
+              {{ busy ? "Сохранение…" : "Сохранить" }}
+            </button>
+            <button
               class="button button-quiet"
               type="button"
-              @click="dialog = 'leave'"
+              @click="requestLeave"
             >
               Выйти без сохранения
             </button>
-          </div>
-          <div v-if="editor.existing" class="danger-zone">
             <button
+              v-if="editor.existing"
               class="button button-danger"
               type="button"
               @click="dialog = 'delete'"
@@ -244,11 +274,11 @@ async function removeTodo(itemId: string) {
       <UiConfirmDialog
         v-if="editor.recovery && recoveryPrompt"
         preserve-on-escape
-        @escape="recoveryPrompt = false"
         title="Восстановить черновик?"
         description="Здесь остались несохранённые изменения. Вы можете продолжить редактирование с того же места."
         confirm="Восстановить"
         safe="Отбросить черновик"
+        @escape="recoveryPrompt = false"
         @confirm="editor.restore"
         @dismiss="editor.discardRecovery"
       />
@@ -263,17 +293,145 @@ async function removeTodo(itemId: string) {
             : 'Изменения в этой сессии будут потеряны.'
         "
         :confirm="dialog === 'delete' ? 'Удалить' : 'Выйти без сохранения'"
-        safe="Продолжить редактирование"
+        safe="Продолжить"
         @dismiss="dismiss"
         @confirm="dialog === 'delete' ? remove() : leave()"
       />
     </template>
-    <div v-else class="empty-state">
+    <div v-else-if="missingNote" class="empty-state">
       <h1>Заметка не найдена</h1>
       <p>Возможно, её уже удалили или в адресе есть ошибка.</p>
       <NuxtLink to="/" class="button button-primary"
-        >Вернуться к заметкам</NuxtLink
-      >
+        >Вернуться к заметкам
+      </NuxtLink>
     </div>
   </section>
 </template>
+
+<style scoped lang="scss">
+@use "~/assets/scss/breakpoints";
+
+.todo-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.editor {
+  max-width: var(--editor-width);
+}
+
+.back-link {
+  align-items: center;
+  display: inline-flex;
+  margin-bottom: var(--space-24);
+  min-height: var(--control-size);
+}
+
+.editor-heading {
+  margin-bottom: var(--space-24);
+
+  h1 {
+    font-family: inherit;
+    font-size: var(--font-size-body);
+    font-weight: 600;
+    letter-spacing: 0;
+    margin-bottom: var(--space-4);
+  }
+}
+
+.draft-status {
+  font-size: var(--font-size-small);
+}
+
+.editor-paper {
+  background: var(--color-surface);
+  border: var(--border-default);
+  border-radius: var(--radius-field);
+  border-top: 3px solid var(--color-accent);
+  padding: var(--space-28);
+}
+
+.field-label {
+  color: var(--color-muted);
+  display: block;
+  font-size: var(--font-size-small);
+  margin-bottom: var(--space-8);
+}
+
+.title-input {
+  border: none;
+  border-radius: var(--radius-small);
+  font-family: var(--font-heading);
+  font-size: clamp(1.8rem, 5vw, 2.5rem);
+  line-height: 1.3;
+  padding: 0 var(--space-4);
+  width: 100%;
+}
+
+.list-heading {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-12);
+  justify-content: space-between;
+  margin: var(--space-32) 0 var(--space-16);
+
+  h2 {
+    font: inherit;
+    font-weight: 600;
+  }
+
+  span {
+    font-size: var(--font-size-small);
+  }
+}
+
+.add-todo {
+  margin-top: var(--space-12);
+}
+
+.history-actions,
+.save-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-12);
+  justify-content: space-between;
+}
+
+.history-actions {
+  margin: var(--space-24) 0;
+}
+
+.save-actions {
+  border-top: var(--border-default);
+  padding-top: var(--space-24);
+
+  > .button-danger {
+    margin-inline-start: auto;
+  }
+}
+
+@media (width <= breakpoints.$mobile) {
+  .editor-paper {
+    padding: var(--space-20) var(--space-12);
+  }
+
+  .save-actions {
+    > .button {
+      width: 100%;
+    }
+
+    > .button-danger {
+      width: auto;
+    }
+  }
+}
+
+.editor-fieldset {
+  border: 0;
+  margin: 0;
+  min-width: 0;
+  padding: 0;
+}
+</style>

@@ -1,5 +1,6 @@
-import { useNotesStore } from "../stores/notes";
 import { COLLECTION_KEY } from "../storage/notes";
+import { useNotesStore } from "../stores/notes";
+
 export default defineNuxtPlugin(() => {
   const notes = useNotesStore();
   notes.refresh();

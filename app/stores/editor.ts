@@ -1,30 +1,33 @@
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 import {
-  applyEdit,
-  copyNote,
-  fieldValue,
-  normalized,
-  setText,
-  validate,
-  type Edit,
-  type Field,
-  type Note,
-} from "../domain/notes/model";
-import {
   createHistory,
   record,
-  undo as undoEdit,
   redo as redoEdit,
+  undo as undoEdit,
 } from "../domain/notes/history";
+import { createId } from "../domain/notes/id";
 import {
-  recoveryStorage,
+  applyEdit,
+  copyNote,
+  type Edit,
+  type Field,
+  fieldValue,
+  normalized,
+  type Note,
+  setText,
+  validate,
+} from "../domain/notes/model";
+import {
   draftKey,
+  migrateRecoveryDraft,
   readDraft,
-  writeDraft,
+  recoveryStorage,
   type StoragePort,
+  writeDraft,
 } from "../storage/notes";
 import { useNotesStore } from "./notes";
+
 export const useEditorStore = defineStore("editor", () => {
   const draft = ref<Note | null>(null);
   const baseline = ref("");
@@ -47,27 +50,32 @@ export const useEditorStore = defineStore("editor", () => {
     () => history.value.past.length > 0 || !!pending.value,
   );
   const canRedo = computed(() => history.value.future.length > 0);
+
   function flushText() {
     clearTimeout(typingTimer);
     if (pending.value) record(history.value, pending.value);
     pending.value = null;
   }
+
   function flushRecovery() {
     clearTimeout(recoveryTimer);
     if (!draft.value || recovery.value || saving) return;
     try {
       if (dirty.value) writeDraft(storage, route.value, draft.value);
       else storage.removeItem(draftKey(route.value));
-    } catch {
+    } catch (e) {
+      console.error(e);
       error.value =
         "Не удалось записать черновик. Оставьте вкладку открытой до сохранения.";
     }
   }
+
   function changed() {
     clearTimeout(recoveryTimer);
     recoveryTimer = setTimeout(flushRecovery, 500);
     errors.value = {};
   }
+
   function open(
     id: string,
     note: Note | undefined,
@@ -82,7 +90,7 @@ export const useEditorStore = defineStore("editor", () => {
     draft.value = note
       ? copyNote(note)
       : id === "new"
-        ? { id: crypto.randomUUID(), title: "", todos: [] }
+        ? { id: createId(), title: "", todos: [] }
         : null;
     baseline.value = JSON.stringify(draft.value);
     history.value = createHistory();
@@ -91,17 +99,21 @@ export const useEditorStore = defineStore("editor", () => {
     error.value = "";
     recovery.value = null;
     try {
+      if (draft.value && draftStorage === recoveryStorage)
+        migrateRecoveryDraft(id);
       if (draft.value) recovery.value = readDraft(storage, id);
     } catch {
       error.value = "Сохранённый черновик недоступен или повреждён.";
     }
   }
+
   function restore() {
     if (recovery.value) draft.value = copyNote(recovery.value);
     recovery.value = null;
     history.value = createHistory();
     changed();
   }
+
   function discardRecovery() {
     try {
       storage.removeItem(draftKey(route.value));
@@ -111,6 +123,7 @@ export const useEditorStore = defineStore("editor", () => {
         "Не удалось удалить черновик. Проверьте доступ к хранилищу.";
     }
   }
+
   function text(field: Field, value: string) {
     if (!draft.value) return;
     if (
@@ -129,6 +142,7 @@ export const useEditorStore = defineStore("editor", () => {
     typingTimer = setTimeout(flushText, 500);
     changed();
   }
+
   function edit(operation: Edit) {
     if (!draft.value) return;
     flushText();
@@ -136,29 +150,35 @@ export const useEditorStore = defineStore("editor", () => {
     record(history.value, operation);
     changed();
   }
+
   function add() {
-    const item = { id: crypto.randomUUID(), text: "", done: false };
+    const item = { id: createId(), text: "", done: false };
     edit({ kind: "insert", item, index: draft.value!.todos.length });
     return item.id;
   }
+
   function remove(id: string) {
     const index = draft.value!.todos.findIndex((item) => item.id === id);
     edit({ kind: "remove", item: { ...draft.value!.todos[index]! }, index });
   }
+
   function toggle(id: string) {
     const before = draft.value!.todos.find((item) => item.id === id)!.done;
     edit({ kind: "toggle", id, before, after: !before });
   }
+
   function undo() {
     flushText();
     if (draft.value) undoEdit(draft.value, history.value);
     changed();
   }
+
   function redo() {
     flushText();
     if (draft.value) redoEdit(draft.value, history.value);
     changed();
   }
+
   function reset(clearRecovery = true) {
     clearTimeout(typingTimer);
     clearTimeout(recoveryTimer);
@@ -169,6 +189,7 @@ export const useEditorStore = defineStore("editor", () => {
     draft.value = null;
     baseline.value = "";
   }
+
   async function save() {
     flushText();
     if (!draft.value || deleted.value || saving) return false;
@@ -197,6 +218,7 @@ export const useEditorStore = defineStore("editor", () => {
       if (draft.value) flushRecovery();
     }
   }
+
   function cancel() {
     try {
       reset();
@@ -206,12 +228,14 @@ export const useEditorStore = defineStore("editor", () => {
       return false;
     }
   }
+
   function dispose() {
     flushText();
     flushRecovery();
     clearTimeout(typingTimer);
     clearTimeout(recoveryTimer);
   }
+
   return {
     draft,
     existing,

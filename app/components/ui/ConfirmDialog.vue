@@ -66,3 +66,27 @@ function trap(event: KeyboardEvent) {
     </div>
   </dialog>
 </template>
+
+<style scoped lang="scss">
+.dialog {
+  background: var(--color-surface);
+  border: var(--border-default);
+  border-radius: var(--radius-dialog);
+  color: var(--color-text);
+  max-height: calc(100dvh - 48px);
+  overflow: auto;
+  padding: max(var(--space-24), env(safe-area-inset-top))
+    max(var(--space-24), env(safe-area-inset-right))
+    max(var(--space-24), env(safe-area-inset-bottom))
+    max(var(--space-24), env(safe-area-inset-left));
+  width: min(480px, calc(100% - 32px));
+
+  &::backdrop {
+    background: var(--color-backdrop);
+  }
+
+  p {
+    margin: var(--space-16) 0 var(--space-24);
+  }
+}
+</style>

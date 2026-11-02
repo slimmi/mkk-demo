@@ -6,11 +6,21 @@ Build a two-page notes SPA with Nuxt 4, the Vue Composition API (`<script setup 
 
 The role emphasizes usable interfaces, Vue reactivity, and independent architectural judgment. Demonstrate these through predictable editing, accessible controls, and state transitions that can be tested without mounting a component.
 
-**Write all code comments in English**, including comments in Vue templates, stylesheets, and tests.
+**Use English for all project development and documentation.** This includes code identifiers, all code comments (including those in Vue templates, stylesheets, and tests), development notes, commit messages, and all Markdown (`.md`) files.
+
+Group TypeScript and JavaScript imports by source module, including imports in Vue script blocks. Order the groups alphabetically by module path and sort named imports alphabetically within each group. Preserve the order of side-effect imports when execution depends on it.
 
 ## Visual design
 
-Use a notebook style with a warm off-white background, white note cards, dark body text, and an ink-blue accent for primary actions and keyboard focus. Define shared colors, spacing, typography, borders, and focus styles in SCSS.
+Use a notebook style with a warm off-white background, white note cards, dark body text, and an ink-blue accent for primary actions and keyboard focus.
+
+Write component-specific styles in the `<style lang="scss">` block of the Vue component that owns them. Keep shared styles in `app/assets/scss/`, including design tokens, base styles, and shared layout rules.
+
+Use CSS custom properties by default. Define shared design tokens for colors, spacing, typography, borders, and focus styles on `:root` in the global SCSS and reference them with `var(--token-name)`. Reserve SCSS variables for cases where CSS custom properties cannot be used, such as a shared breakpoint in a media query condition.
+
+In each CSS or SCSS declaration block, list custom properties (`--*`) first, followed by standard CSS properties. Sort each group alphabetically by property name.
+
+Prefer CSS shorthand in stylesheets and Vue style blocks (for example, `padding: 8px 16px`). Use a longhand property when the shorthand would reset other values that should be preserved.
 
 - **Home (`/`).** Place the title and Create Note action above a responsive card grid. Show the note title and the first three todos, or all todos if there are fewer. Show completion in the preview without allowing toggles. Keep completed items legible and provide visible Edit and Delete actions. Use one column on small screens.
 - **Editor.** Use a narrow reading column with a prominent editable title, labeled checkboxes aligned with the task text, and Add Todo directly below the list. Make Save the primary action, group Undo and Redo together, and separate Delete from routine editing controls.

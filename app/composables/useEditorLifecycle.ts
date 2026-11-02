@@ -1,6 +1,8 @@
 import { useEditorStore } from "../stores/editor";
+
 export function useEditorLifecycle(dialogOpen: () => boolean) {
   const editor = useEditorStore();
+
   function shortcut(event: KeyboardEvent) {
     const target = event.target as HTMLElement | null;
     if (
@@ -18,10 +20,12 @@ export function useEditorLifecycle(dialogOpen: () => boolean) {
       else editor.undo();
     }
   }
+
   function hide() {
     editor.flushText();
     editor.flushRecovery();
   }
+
   onMounted(() => {
     window.addEventListener("keydown", shortcut);
     window.addEventListener("pagehide", hide);
