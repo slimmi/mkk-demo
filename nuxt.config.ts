@@ -1,7 +1,7 @@
 export default defineNuxtConfig({
   compatibilityDate: "2026-11-03",
   ssr: false,
-  modules: ["@pinia/nuxt"],
+  modules: ["@pinia/nuxt", "@nuxt/eslint"],
   css: ["~/assets/scss/main.scss"],
   typescript: { strict: true, typeCheck: true },
   app: {

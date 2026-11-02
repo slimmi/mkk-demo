@@ -1,0 +1,12 @@
+.agents/
+.data/
+.idea/
+.nuxt/
+.output/
+coverage/
+dist/
+node_modules/
+playwright-report/
+test-results/
+package-lock.json
+skills-lock.json
