@@ -8,7 +8,8 @@
     "generate": "nuxt generate",
     "typecheck": "nuxt typecheck",
     "test": "vitest run",
-    "postinstall": "nuxt prepare"
+    "postinstall": "nuxt prepare",
+    "test:browser": "node tests/browser/smoke.cjs"
   },
   "dependencies": {
     "@pinia/nuxt": "^0.11.0",

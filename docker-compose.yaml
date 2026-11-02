@@ -1,0 +1,5 @@
+services:
+  notes:
+    build: .
+    ports:
+      - "3000:80"

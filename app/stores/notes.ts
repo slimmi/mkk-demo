@@ -3,6 +3,7 @@ import { ref } from "vue";
 import type { Note } from "../domain/notes/model";
 import { copyNote } from "../domain/notes/model";
 import {
+  savedStorage,
   readNotes,
   writeNotes,
   withCollectionLock,
@@ -11,7 +12,7 @@ import {
 export const useNotesStore = defineStore("notes", () => {
   const notes = ref<Note[]>([]);
   const error = ref("");
-  function refresh(storage: StoragePort = localStorage) {
+  function refresh(storage: StoragePort = savedStorage) {
     try {
       notes.value = readNotes(storage);
       error.value = "";
@@ -25,7 +26,7 @@ export const useNotesStore = defineStore("notes", () => {
   async function save(
     note: Note,
     existing: boolean,
-    storage: StoragePort = localStorage,
+    storage: StoragePort = savedStorage,
     lock = withCollectionLock,
   ) {
     return lock(() => {
@@ -41,7 +42,7 @@ export const useNotesStore = defineStore("notes", () => {
   }
   async function remove(
     id: string,
-    storage: StoragePort = localStorage,
+    storage: StoragePort = savedStorage,
     lock = withCollectionLock,
   ) {
     await lock(() => {

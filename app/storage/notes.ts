@@ -57,3 +57,13 @@ export async function withCollectionLock<T>(action: () => T): Promise<T> {
     "Для сохранения откройте приложение через localhost или HTTPS в современном браузере.",
   );
 }
+
+function browserStorage(area: "localStorage" | "sessionStorage"): StoragePort {
+  return {
+    getItem: (key) => globalThis[area].getItem(key),
+    setItem: (key, value) => globalThis[area].setItem(key, value),
+    removeItem: (key) => globalThis[area].removeItem(key),
+  };
+}
+export const savedStorage = browserStorage("localStorage");
+export const recoveryStorage = browserStorage("sessionStorage");

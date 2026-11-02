@@ -18,6 +18,7 @@ import {
   redo as redoEdit,
 } from "../domain/notes/history";
 import {
+  recoveryStorage,
   draftKey,
   readDraft,
   writeDraft,
@@ -38,6 +39,7 @@ export const useEditorStore = defineStore("editor", () => {
   let typingTimer: ReturnType<typeof setTimeout> | undefined;
   let recoveryTimer: ReturnType<typeof setTimeout> | undefined;
   let storage: StoragePort;
+  let saving = false;
   const dirty = computed(
     () => !!draft.value && JSON.stringify(draft.value) !== baseline.value,
   );
@@ -52,7 +54,7 @@ export const useEditorStore = defineStore("editor", () => {
   }
   function flushRecovery() {
     clearTimeout(recoveryTimer);
-    if (!draft.value || recovery.value) return;
+    if (!draft.value || recovery.value || saving) return;
     try {
       if (dirty.value) writeDraft(storage, route.value, draft.value);
       else storage.removeItem(draftKey(route.value));
@@ -69,7 +71,7 @@ export const useEditorStore = defineStore("editor", () => {
   function open(
     id: string,
     note: Note | undefined,
-    draftStorage: StoragePort = sessionStorage,
+    draftStorage: StoragePort = recoveryStorage,
   ) {
     clearTimeout(typingTimer);
     clearTimeout(recoveryTimer);
@@ -157,10 +159,10 @@ export const useEditorStore = defineStore("editor", () => {
     if (draft.value) redoEdit(draft.value, history.value);
     changed();
   }
-  function reset() {
+  function reset(clearRecovery = true) {
     clearTimeout(typingTimer);
     clearTimeout(recoveryTimer);
-    storage.removeItem(draftKey(route.value));
+    if (clearRecovery) storage.removeItem(draftKey(route.value));
     history.value = createHistory();
     pending.value = null;
     recovery.value = null;
@@ -169,10 +171,13 @@ export const useEditorStore = defineStore("editor", () => {
   }
   async function save() {
     flushText();
-    if (!draft.value || deleted.value) return false;
+    if (!draft.value || deleted.value || saving) return false;
     errors.value = validate(draft.value);
     if (Object.keys(errors.value).length) return false;
+    saving = true;
+    clearTimeout(recoveryTimer);
     try {
+      storage.removeItem(draftKey(route.value));
       const saved = await useNotesStore().save(
         normalized(draft.value),
         existing.value,
@@ -181,12 +186,15 @@ export const useEditorStore = defineStore("editor", () => {
         deleted.value = true;
         return false;
       }
-      reset();
+      reset(false);
       return true;
     } catch {
       error.value =
         "Не удалось сохранить заметку. Проверьте хранилище браузера и попробуйте ещё раз.";
       return false;
+    } finally {
+      saving = false;
+      if (draft.value) flushRecovery();
     }
   }
   function cancel() {

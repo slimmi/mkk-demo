@@ -222,4 +222,14 @@ describe("editor session", () => {
     await expect(useNotesStore().remove("one")).rejects.toThrow();
     expect(localStorage.getItem(COLLECTION_KEY)).toBe("{invalid");
   });
+  it("does not commit saved notes if recovery cleanup fails", async () => {
+    const editor = open();
+    editor.text({ kind: "title" }, "Unsaved");
+    vi.mocked(sessionStorage.removeItem).mockImplementation(() => {
+      throw new Error("Denied");
+    });
+    expect(await editor.save()).toBe(false);
+    expect(editor.draft!.title).toBe("Unsaved");
+    expect(useNotesStore().notes[0]!.title).toBe("Title");
+  });
 });

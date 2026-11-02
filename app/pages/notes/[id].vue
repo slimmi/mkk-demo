@@ -26,7 +26,9 @@ watch(
       editor.deleted = true;
   },
 );
-useEditorLifecycle(() => !!dialog.value || (!!editor.recovery && recoveryPrompt.value));
+useEditorLifecycle(
+  () => !!dialog.value || (!!editor.recovery && recoveryPrompt.value),
+);
 onBeforeRouteLeave(() => {
   if (leaving.value || !editor.dirty) return true;
   editor.flushText();
@@ -112,7 +114,20 @@ async function removeTodo(itemId: string) {
       <p v-if="editor.error" role="alert" class="message error-message">
         {{ editor.error }}
       </p>
-      <div v-if="editor.recovery && !recoveryPrompt" class="message"><p>Есть несохранённый черновик. Выберите, с какой версии продолжить.</p><div class="actions"><button class="button button-primary" type="button" @click="editor.restore">Восстановить</button><button class="button" type="button" @click="editor.discardRecovery">Отбросить черновик</button></div></div>
+      <div v-if="editor.recovery && !recoveryPrompt" class="message">
+        <p>Есть несохранённый черновик. Выберите, с какой версии продолжить.</p>
+        <div class="actions">
+          <button
+            class="button button-primary"
+            type="button"
+            @click="editor.restore"
+          >
+            Восстановить</button
+          ><button class="button" type="button" @click="editor.discardRecovery">
+            Отбросить черновик
+          </button>
+        </div>
+      </div>
       <form @submit.prevent="save">
         <p
           v-if="Object.keys(editor.errors).length"
